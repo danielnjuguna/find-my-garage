@@ -55,16 +55,33 @@ const Index = () => {
     try {
       initializeGemini(apiKey);
       const searchResults: SearchResult[] = [];
+      const batchSize = 5; // Process 5 frames at a time
+      const delayBetweenBatches = 6000; // 6 seconds between batches to stay under rate limit
 
-      for (let i = 0; i < frames.length; i++) {
-        const description = await analyzeImage(frames[i], searchQuery);
-        if (description.toLowerCase() !== "not found") {
-          searchResults.push({
-            frameIndex: i,
-            timestamp: `${Math.floor(i)}s`,
-            description,
-            frameUrl: frames[i],
-          });
+      for (let i = 0; i < frames.length; i += batchSize) {
+        const batch = frames.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (frame, batchIndex) => {
+          try {
+            const description = await analyzeImage(frame, searchQuery);
+            if (description.toLowerCase() !== "not found") {
+              searchResults.push({
+                frameIndex: i + batchIndex,
+                timestamp: `${Math.floor((i + batchIndex) / 1)}s`,
+                description,
+                frameUrl: frame,
+              });
+            }
+          } catch (error: any) {
+            console.error(`Error analyzing frame ${i + batchIndex}:`, error);
+            // Don't throw here, just log the error and continue with other frames
+          }
+        });
+
+        await Promise.all(batchPromises);
+        
+        // Only delay if there are more frames to process
+        if (i + batchSize < frames.length) {
+          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
         }
       }
 
@@ -78,8 +95,8 @@ const Index = () => {
           }`
         );
       }
-    } catch (error) {
-      toast.error("Error analyzing frames");
+    } catch (error: any) {
+      toast.error(error.message || "Error analyzing frames");
       console.error(error);
     } finally {
       setIsAnalyzing(false);
