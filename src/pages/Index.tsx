@@ -63,7 +63,7 @@ const Index = () => {
         const batchPromises = batch.map(async (frame, batchIndex) => {
           try {
             const description = await analyzeImage(frame, searchQuery);
-            if (description.toLowerCase() !== "not found") {
+            if (description !== "Not found") {
               searchResults.push({
                 frameIndex: i + batchIndex,
                 timestamp: `${Math.floor((i + batchIndex) / 1)}s`,

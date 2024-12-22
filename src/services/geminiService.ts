@@ -33,7 +33,10 @@ export const analyzeImage = async (
     ]);
 
     const response = await result.response;
-    return response.text();
+    const text = response.text();
+    
+    // Only return the description if the item was found
+    return text.toLowerCase().includes("not found") ? "Not found" : text;
   } catch (error: any) {
     console.error("Error analyzing image:", error);
     if (error.message?.includes("429") || error.message?.includes("rate limit")) {
