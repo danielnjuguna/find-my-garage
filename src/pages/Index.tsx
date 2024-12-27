@@ -1,18 +1,15 @@
 import React, { useState } from "react";
 import { toast } from "sonner";
 import VideoUpload from "@/components/VideoUpload";
-import SearchResults from "@/components/SearchResults";
-import { extractFrames } from "@/utils/videoUtils";
-import { initializeGemini, analyzeVideo } from "@/services/geminiService";
+import { initializeGemini, analyzeVideo, extractVideoSegment } from "@/services/geminiService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
 
 interface SearchResult {
-  frameIndex: number;
   timestamp: string;
-  description: string;
-  frameUrl: string;
+  endTimestamp?: string;
+  preview: string;
 }
 
 const Index = () => {
@@ -27,34 +24,21 @@ const Index = () => {
     toast.success("Video uploaded successfully");
   };
 
-  const parseTimestamp = (timestamp: string): number => {
-    // Handle different timestamp formats
-    const timeMatch = timestamp.match(/(\d+):(\d+)/);
-    if (timeMatch) {
-      const minutes = parseInt(timeMatch[1]);
-      const seconds = parseInt(timeMatch[2]);
-      return minutes * 60 + seconds;
+  const parseTimestamps = (text: string): { start: string; end?: string }[] => {
+    if (text === "not found in the video") {
+      return [];
     }
-    const secondsMatch = timestamp.match(/(\d+)s/);
-    if (secondsMatch) {
-      return parseInt(secondsMatch[1]);
-    }
-    return 0;
-  };
 
-  const getVideoDuration = (file: File): Promise<number> => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.onloadedmetadata = () => {
-        resolve(video.duration);
-        URL.revokeObjectURL(video.src);
-      };
-      video.onerror = () => {
-        reject("Error loading video");
-        URL.revokeObjectURL(video.src);
-      };
-      video.src = URL.createObjectURL(file);
+    const timestamps = text.split(',').map(t => t.trim());
+    return timestamps.map(timestamp => {
+      const range = timestamp.match(/\[(\d{2}:\d{2}:\d{2})\](?:\s*to\s*\[(\d{2}:\d{2}:\d{2})\])?/);
+      if (range) {
+        return {
+          start: range[1],
+          end: range[2]
+        };
+      }
+      return { start: timestamp.replace(/[\[\]]/g, '') };
     });
   };
 
@@ -82,36 +66,19 @@ const Index = () => {
       const analysisResult = await analyzeVideo(videoFile, searchQuery);
       console.log("Analysis result:", analysisResult);
 
-      // Extract frames from the video
-      const frames = await extractFrames(videoFile);
-      console.log("Extracted frames:", frames.length);
-
-      // Get video duration
-      const duration = await getVideoDuration(videoFile);
-
-      // Parse the analysis result to find timestamps
-      const timestampRegex = /(\d+:\d+|\d+s)/g;
-      const matches = analysisResult.split('\n').filter(line => 
-        line.match(timestampRegex) && line.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-
-      if (matches && matches.length > 0) {
-        const searchResults: SearchResult[] = matches.map((match, index) => {
-          const timestampMatch = match.match(timestampRegex);
-          const timestamp = timestampMatch ? timestampMatch[0] : `${index}s`;
-          const description = match.replace(timestampRegex, '').trim();
-          
-          // Convert timestamp to frame index
-          const seconds = parseTimestamp(timestamp);
-          const frameIndex = Math.floor(seconds * (frames.length / duration));
-          
-          return {
-            frameIndex,
-            timestamp,
-            description,
-            frameUrl: frames[frameIndex] || frames[0],
-          };
-        });
+      const timestampRanges = parseTimestamps(analysisResult);
+      
+      if (timestampRanges.length > 0) {
+        const searchResults = await Promise.all(
+          timestampRanges.map(async ({ start, end }) => {
+            const preview = await extractVideoSegment(videoFile, start, end);
+            return {
+              timestamp: start,
+              endTimestamp: end,
+              preview
+            };
+          })
+        );
 
         setResults(searchResults);
         toast.success(`Found ${searchResults.length} occurrences of ${searchQuery}`);
@@ -168,7 +135,24 @@ const Index = () => {
           </Button>
         </div>
 
-        <SearchResults results={results} />
+        {results.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {results.map((result, index) => (
+              <div key={index} className="border rounded-lg p-4 space-y-2">
+                <img
+                  src={result.preview}
+                  alt={`Result ${index + 1}`}
+                  className="w-full h-48 object-cover rounded-lg"
+                />
+                <p className="text-sm text-gray-600">
+                  {result.endTimestamp
+                    ? `${result.timestamp} to ${result.endTimestamp}`
+                    : result.timestamp}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
