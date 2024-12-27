@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import VideoUpload from "@/components/VideoUpload";
 import SearchResults from "@/components/SearchResults";
 import { extractFrames } from "@/utils/videoUtils";
-import { initializeGemini, analyzeVideo, analyzeImage } from "@/services/geminiService";
+import { initializeGemini, analyzeVideo } from "@/services/geminiService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
@@ -27,6 +27,21 @@ const Index = () => {
     toast.success("Video uploaded successfully");
   };
 
+  const parseTimestamp = (timestamp: string): number => {
+    // Handle different timestamp formats
+    const timeMatch = timestamp.match(/(\d+):(\d+)/);
+    if (timeMatch) {
+      const minutes = parseInt(timeMatch[1]);
+      const seconds = parseInt(timeMatch[2]);
+      return minutes * 60 + seconds;
+    }
+    const secondsMatch = timestamp.match(/(\d+)s/);
+    if (secondsMatch) {
+      return parseInt(secondsMatch[1]);
+    }
+    return 0;
+  };
+
   const handleSearch = async () => {
     if (!apiKey) {
       toast.error("Please enter your Gemini API key");
@@ -48,26 +63,34 @@ const Index = () => {
 
     try {
       initializeGemini(apiKey);
-      
-      // Try the direct video analysis first
       const analysisResult = await analyzeVideo(videoFile, searchQuery);
-      
-      // Extract timestamps and descriptions from the analysis result
-      const matches = analysisResult.match(/(\d+:\d+|\d+s|timestamp: \d+).*?\n.*?(?=\n|$)/gi);
-      
+      console.log("Analysis result:", analysisResult);
+
+      // Extract frames from the video
+      const frames = await extractFrames(videoFile);
+      console.log("Extracted frames:", frames.length);
+
+      // Parse the analysis result to find timestamps
+      const timestampRegex = /(\d+:\d+|\d+s)/g;
+      const matches = analysisResult.split('\n').filter(line => 
+        line.match(timestampRegex) && line.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
       if (matches && matches.length > 0) {
-        // Extract frames at the identified timestamps
-        const frames = await extractFrames(videoFile);
-        
         const searchResults: SearchResult[] = matches.map((match, index) => {
-          const timestamp = match.match(/(\d+:\d+|\d+s|timestamp: \d+)/i)?.[0] || `${index}s`;
-          const description = match.replace(/(\d+:\d+|\d+s|timestamp: \d+)/i, "").trim();
+          const timestampMatch = match.match(timestampRegex);
+          const timestamp = timestampMatch ? timestampMatch[0] : `${index}s`;
+          const description = match.replace(timestampRegex, '').trim();
+          
+          // Convert timestamp to frame index
+          const seconds = parseTimestamp(timestamp);
+          const frameIndex = Math.floor(seconds * (frames.length / videoFile.duration));
           
           return {
-            frameIndex: index,
+            frameIndex,
             timestamp,
             description,
-            frameUrl: frames[index] || frames[0], // fallback to first frame if index not found
+            frameUrl: frames[frameIndex] || frames[0],
           };
         });
 
