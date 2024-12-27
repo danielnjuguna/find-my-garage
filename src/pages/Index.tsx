@@ -42,6 +42,22 @@ const Index = () => {
     return 0;
   };
 
+  const getVideoDuration = (file: File): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        resolve(video.duration);
+        URL.revokeObjectURL(video.src);
+      };
+      video.onerror = () => {
+        reject("Error loading video");
+        URL.revokeObjectURL(video.src);
+      };
+      video.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleSearch = async () => {
     if (!apiKey) {
       toast.error("Please enter your Gemini API key");
@@ -70,6 +86,9 @@ const Index = () => {
       const frames = await extractFrames(videoFile);
       console.log("Extracted frames:", frames.length);
 
+      // Get video duration
+      const duration = await getVideoDuration(videoFile);
+
       // Parse the analysis result to find timestamps
       const timestampRegex = /(\d+:\d+|\d+s)/g;
       const matches = analysisResult.split('\n').filter(line => 
@@ -84,7 +103,7 @@ const Index = () => {
           
           // Convert timestamp to frame index
           const seconds = parseTimestamp(timestamp);
-          const frameIndex = Math.floor(seconds * (frames.length / videoFile.duration));
+          const frameIndex = Math.floor(seconds * (frames.length / duration));
           
           return {
             frameIndex,
