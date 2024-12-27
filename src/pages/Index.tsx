@@ -17,7 +17,7 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
 
   const handleVideoSelect = async (file: File) => {
     setVideoFile(file);
@@ -62,6 +62,9 @@ const Index = () => {
     setResults([]);
 
     try {
+      // Save API key to localStorage
+      localStorage.setItem("gemini_api_key", apiKey);
+      
       initializeGemini(apiKey);
       const analysisResult = await analyzeVideo(videoFile, searchQuery);
       console.log("Analysis result:", analysisResult);

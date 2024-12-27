@@ -6,9 +6,14 @@ export const initializeGemini = (apiKey: string) => {
   genAI = new GoogleGenerativeAI(apiKey);
 };
 
-interface ChatSession {
-  send: (message: string) => Promise<string>;
-}
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+};
 
 export const analyzeVideo = async (
   videoFile: File,
@@ -53,16 +58,6 @@ export const analyzeVideo = async (
     }
     throw new Error("Error analyzing video. Please try again.");
   }
-};
-
-// Helper function to convert File to base64
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
 };
 
 // Extract video segment based on timestamp range
