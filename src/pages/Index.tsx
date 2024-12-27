@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import VideoUpload from "@/components/VideoUpload";
 import SearchResults from "@/components/SearchResults";
 import { extractFrames } from "@/utils/videoUtils";
-import { initializeGemini, analyzeImage } from "@/services/geminiService";
+import { initializeGemini, analyzeVideo, analyzeImage } from "@/services/geminiService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
@@ -16,21 +16,15 @@ interface SearchResult {
 }
 
 const Index = () => {
-  const [frames, setFrames] = useState<string[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [apiKey, setApiKey] = useState("");
 
   const handleVideoSelect = async (file: File) => {
-    try {
-      const extractedFrames = await extractFrames(file);
-      setFrames(extractedFrames);
-      toast.success(`Extracted ${extractedFrames.length} frames`);
-    } catch (error) {
-      toast.error("Error processing video");
-      console.error(error);
-    }
+    setVideoFile(file);
+    toast.success("Video uploaded successfully");
   };
 
   const handleSearch = async () => {
@@ -44,7 +38,7 @@ const Index = () => {
       return;
     }
 
-    if (frames.length === 0) {
+    if (!videoFile) {
       toast.error("Please upload a video first");
       return;
     }
@@ -54,49 +48,36 @@ const Index = () => {
 
     try {
       initializeGemini(apiKey);
-      const searchResults: SearchResult[] = [];
-      const batchSize = 5; // Process 5 frames at a time
-      const delayBetweenBatches = 6000; // 6 seconds between batches to stay under rate limit
-
-      for (let i = 0; i < frames.length; i += batchSize) {
-        const batch = frames.slice(i, i + batchSize);
-        const batchPromises = batch.map(async (frame, batchIndex) => {
-          try {
-            const description = await analyzeImage(frame, searchQuery);
-            if (description !== "Not found") {
-              searchResults.push({
-                frameIndex: i + batchIndex,
-                timestamp: `${Math.floor((i + batchIndex) / 1)}s`,
-                description,
-                frameUrl: frame,
-              });
-            }
-          } catch (error: any) {
-            console.error(`Error analyzing frame ${i + batchIndex}:`, error);
-            // Don't throw here, just log the error and continue with other frames
-          }
+      
+      // Try the direct video analysis first
+      const analysisResult = await analyzeVideo(videoFile, searchQuery);
+      
+      // Extract timestamps and descriptions from the analysis result
+      const matches = analysisResult.match(/(\d+:\d+|\d+s|timestamp: \d+).*?\n.*?(?=\n|$)/gi);
+      
+      if (matches && matches.length > 0) {
+        // Extract frames at the identified timestamps
+        const frames = await extractFrames(videoFile);
+        
+        const searchResults: SearchResult[] = matches.map((match, index) => {
+          const timestamp = match.match(/(\d+:\d+|\d+s|timestamp: \d+)/i)?.[0] || `${index}s`;
+          const description = match.replace(/(\d+:\d+|\d+s|timestamp: \d+)/i, "").trim();
+          
+          return {
+            frameIndex: index,
+            timestamp,
+            description,
+            frameUrl: frames[index] || frames[0], // fallback to first frame if index not found
+          };
         });
 
-        await Promise.all(batchPromises);
-        
-        // Only delay if there are more frames to process
-        if (i + batchSize < frames.length) {
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-        }
-      }
-
-      setResults(searchResults);
-      if (searchResults.length === 0) {
-        toast.info(`No ${searchQuery} found in the video`);
+        setResults(searchResults);
+        toast.success(`Found ${searchResults.length} occurrences of ${searchQuery}`);
       } else {
-        toast.success(
-          `Found ${searchQuery} in ${searchResults.length} frame${
-            searchResults.length === 1 ? "" : "s"
-          }`
-        );
+        toast.info(`No ${searchQuery} found in the video`);
       }
     } catch (error: any) {
-      toast.error(error.message || "Error analyzing frames");
+      toast.error(error.message || "Error analyzing video");
       console.error(error);
     } finally {
       setIsAnalyzing(false);
