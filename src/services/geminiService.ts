@@ -25,7 +25,10 @@ export const analyzeImage = async (
       ? imageData 
       : `data:image/jpeg;base64,${imageData}`;
 
-    const prompt = `Analyze this image and tell me if you can see ${query} in it. If you do, describe its location in the image. If you don't see it, just say "Not found".`;
+    const prompt = `Analyze this image and tell me if you can see ${query} in it. If you do:
+    1. Describe its location in the image
+    2. Provide the bounding box coordinates in this exact format: "BBOX: <left>,<top>,<width>,<height>" where each value is a percentage (0-100) of the image dimensions.
+    If you don't see it, just say "Not found".`;
 
     const result = await model.generateContent([
       prompt,
