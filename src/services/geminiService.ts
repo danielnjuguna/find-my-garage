@@ -20,6 +20,11 @@ export const analyzeImage = async (
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
 
+    // Ensure the image data is properly formatted
+    const imageDataFormatted = imageData.startsWith('data:') 
+      ? imageData 
+      : `data:image/jpeg;base64,${imageData}`;
+
     const prompt = `Analyze this image and tell me if you can see ${query} in it. If you do, describe its location in the image. If you don't see it, just say "Not found".`;
 
     const result = await model.generateContent([
@@ -27,7 +32,7 @@ export const analyzeImage = async (
       {
         inlineData: {
           mimeType: "image/jpeg",
-          data: imageData.split(",")[1],
+          data: imageDataFormatted.split(",")[1],
         },
       },
     ]);
